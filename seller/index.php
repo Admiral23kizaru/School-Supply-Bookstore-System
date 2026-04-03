@@ -15,6 +15,10 @@ function esc(string $value): string
     return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
 }
 
+// Base URL of the project (used for saving `products.image_url`).
+// Example: /proj/School-Supply-Bookstore-System
+$appBaseUrl = rtrim(str_replace('\\', '/', dirname(dirname($_SERVER['SCRIPT_NAME'] ?? ''))), '/');
+
 function productStatusFromStock(int $stock): string
 {
     if ($stock <= 0) {
@@ -24,6 +28,101 @@ function productStatusFromStock(int $stock): string
         return 'Low Stock';
     }
     return 'In Stock';
+}
+
+function ensureProfileImageColumn($conn, string $table): void
+{
+    try {
+        $check = $conn->query("SHOW COLUMNS FROM `$table` LIKE 'profile_image_url'");
+        if ($check && (int) $check->num_rows === 0) {
+            $conn->query("ALTER TABLE `$table` ADD profile_image_url varchar(255) DEFAULT NULL");
+        }
+    } catch (Throwable $e) {
+        // Ignore to avoid breaking the portal.
+    }
+}
+
+function handleProfileImageUpload(array $file, string $appBaseUrl): ?string
+{
+    if (empty($file['tmp_name']) || !isset($file['error']) || (int) $file['error'] !== UPLOAD_ERR_OK) {
+        return null;
+    }
+
+    $allowed = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        'image/gif' => 'gif',
+    ];
+
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mime = $finfo->file($file['tmp_name']);
+    if (!$mime || !isset($allowed[$mime])) {
+        return null;
+    }
+
+    $maxBytes = 2 * 1024 * 1024; // 2MB
+    if (!empty($file['size']) && (int) $file['size'] > $maxBytes) {
+        return null;
+    }
+
+    $uploadDir = __DIR__ . '/../assets/uploads/profiles';
+    if (!is_dir($uploadDir)) {
+        @mkdir($uploadDir, 0755, true);
+    }
+    if (!is_dir($uploadDir)) {
+        return null;
+    }
+
+    $ext = $allowed[$mime];
+    $filename = 'profile_' . uniqid('', true) . '.' . $ext;
+    $dest = $uploadDir . DIRECTORY_SEPARATOR . $filename;
+
+    if (!move_uploaded_file($file['tmp_name'], $dest)) {
+        return null;
+    }
+
+    return $appBaseUrl . '/assets/uploads/profiles/' . $filename;
+}
+
+ensureProfileImageColumn($conn, 'sellers');
+
+function handleProductImageUpload(array $file, string $appBaseUrl): ?string
+{
+    if (empty($file['tmp_name']) || !isset($file['error']) || (int) $file['error'] !== UPLOAD_ERR_OK) {
+        return null;
+    }
+
+    $allowed = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        'image/gif' => 'gif',
+    ];
+
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mime = $finfo->file($file['tmp_name']);
+    if (!$mime || !isset($allowed[$mime])) {
+        return null;
+    }
+
+    $uploadDir = __DIR__ . '/../assets/uploads/products';
+    if (!is_dir($uploadDir)) {
+        @mkdir($uploadDir, 0755, true);
+    }
+    if (!is_dir($uploadDir)) {
+        return null;
+    }
+
+    $ext = $allowed[$mime];
+    $filename = 'product_' . uniqid('', true) . '.' . $ext;
+    $dest = $uploadDir . DIRECTORY_SEPARATOR . $filename;
+
+    if (!move_uploaded_file($file['tmp_name'], $dest)) {
+        return null;
+    }
+
+    return $appBaseUrl . '/assets/uploads/products/' . $filename;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -36,14 +135,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stock = (int) ($_POST['stock'] ?? 0);
         $unit = trim($_POST['unit'] ?? 'pc');
         $status = productStatusFromStock($stock);
+        $imageUrl = '';
+        if (isset($_FILES['image']) && is_array($_FILES['image'])) {
+            $uploaded = handleProductImageUpload($_FILES['image'], $appBaseUrl);
+            if ($uploaded) {
+                $imageUrl = $uploaded;
+            }
+        }
 
         if ($name !== '' && $category !== '' && $price > 0) {
             $desc = 'Unit: ' . $unit;
             $stmt = $conn->prepare(
-                "INSERT INTO products (seller_id, name, category, description, price, stock, status) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                "INSERT INTO products (seller_id, name, category, description, price, stock, status, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             );
-            $stmt->bind_param("isssdis", $sellerId, $name, $category, $desc, $price, $stock, $status);
-            $stmt->execute();
+            if ($stmt) {
+                $stmt->bind_param("isssdiss", $sellerId, $name, $category, $desc, $price, $stock, $status, $imageUrl);
+                $stmt->execute();
+            }
         }
 
         header('Location: index.php?tab=inventory');
@@ -58,14 +166,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stock = (int) ($_POST['stock'] ?? 0);
         $unit = trim($_POST['unit'] ?? 'pc');
         $status = productStatusFromStock($stock);
+        $newImageUrl = '';
+        if (isset($_FILES['image']) && is_array($_FILES['image'])) {
+            $uploaded = handleProductImageUpload($_FILES['image'], $appBaseUrl);
+            if ($uploaded) {
+                $newImageUrl = $uploaded;
+            }
+        }
 
         if ($id > 0 && $name !== '' && $category !== '' && $price > 0) {
             $desc = 'Unit: ' . $unit;
-            $stmt = $conn->prepare(
-                "UPDATE products SET name = ?, category = ?, description = ?, price = ?, stock = ?, status = ? WHERE id = ? AND (seller_id = ? OR seller_id IS NULL)"
-            );
-            $stmt->bind_param("sssdisii", $name, $category, $desc, $price, $stock, $status, $id, $sellerId);
-            $stmt->execute();
+
+            if ($newImageUrl !== '') {
+                $stmt = $conn->prepare(
+                    "UPDATE products SET name = ?, category = ?, description = ?, price = ?, stock = ?, status = ?, image_url = ? WHERE id = ? AND (seller_id = ? OR seller_id IS NULL)"
+                );
+                if ($stmt) {
+                    $stmt->bind_param("sssdissii", $name, $category, $desc, $price, $stock, $status, $newImageUrl, $id, $sellerId);
+                    $stmt->execute();
+                }
+            } else {
+                $stmt = $conn->prepare(
+                    "UPDATE products SET name = ?, category = ?, description = ?, price = ?, stock = ?, status = ? WHERE id = ? AND (seller_id = ? OR seller_id IS NULL)"
+                );
+                if ($stmt) {
+                    $stmt->bind_param("sssdisii", $name, $category, $desc, $price, $stock, $status, $id, $sellerId);
+                    $stmt->execute();
+                }
+            }
         }
 
         header('Location: index.php?tab=inventory');
@@ -98,6 +226,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: index.php?tab=orders&view=' . urlencode($orderId));
         exit;
     }
+
+    if ($action === 'update_profile') {
+        $name = trim($_POST['name'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+
+        if ($sellerId > 0 && $name !== '' && $email !== '') {
+            $newImageUrl = null;
+            if (isset($_FILES['image']) && is_array($_FILES['image'])) {
+                $uploaded = handleProfileImageUpload($_FILES['image'], $appBaseUrl);
+                if ($uploaded) {
+                    $newImageUrl = $uploaded;
+                }
+            }
+
+            try {
+                if ($newImageUrl) {
+                    $stmt = $conn->prepare("UPDATE sellers SET name = ?, email = ?, profile_image_url = ? WHERE id = ?");
+                    if ($stmt) {
+                        $stmt->bind_param("sssi", $name, $email, $newImageUrl, $sellerId);
+                        $stmt->execute();
+                    }
+                } else {
+                    $stmt = $conn->prepare("UPDATE sellers SET name = ?, email = ? WHERE id = ?");
+                    if ($stmt) {
+                        $stmt->bind_param("ssi", $name, $email, $sellerId);
+                        $stmt->execute();
+                    }
+                }
+
+                $_SESSION['email'] = $email;
+            } catch (Throwable $e) {
+                // If email is duplicated, keep session values and just redirect.
+            }
+        }
+
+        header('Location: index.php?tab=inventory');
+        exit;
+    }
 }
 
 $tab = $_GET['tab'] ?? 'inventory';
@@ -111,7 +277,8 @@ $statusFilter = trim($_GET['status'] ?? '');
 $viewOrderId = trim($_GET['view'] ?? '');
 
 $sellerName = 'Seller Account';
-$sellerStmt = $conn->prepare("SELECT name, email FROM sellers WHERE id = ?");
+$sellerProfileImageUrl = '';
+$sellerStmt = $conn->prepare("SELECT name, email, profile_image_url FROM sellers WHERE id = ?");
 if ($sellerStmt) {
     $sellerStmt->bind_param("i", $sellerId);
     $sellerStmt->execute();
@@ -119,6 +286,7 @@ if ($sellerStmt) {
     if ($seller = $sellerRes->fetch_assoc()) {
         $sellerName = $seller['name'] ?: $sellerName;
         $sellerEmail = $seller['email'] ?: $sellerEmail;
+        $sellerProfileImageUrl = $seller['profile_image_url'] ?? '';
     }
 }
 
@@ -374,8 +542,24 @@ if ($viewOrderId !== '') {
         </a>
 
         <div class="sidebar-bottom">
-            <div class="account-name"><?= esc($sellerName) ?></div>
-            <div class="account-email"><?= esc($sellerEmail) ?></div>
+            <div class="d-flex align-items-center gap-2 mb-2">
+                <div style="width:36px;height:36px;border-radius:50%;overflow:hidden;background:#2a2d34;flex-shrink:0;display:flex;align-items:center;justify-content:center;">
+                    <?php if (!empty($sellerProfileImageUrl)): ?>
+                        <img src="<?= esc($sellerProfileImageUrl) ?>" alt="" style="width:100%;height:100%;object-fit:cover;">
+                    <?php else: ?>
+                        <i class="bi bi-person" style="color:#aab1bf;font-size:18px;"></i>
+                    <?php endif; ?>
+                </div>
+                <div class="overflow-hidden">
+                    <div class="account-name"><?= esc($sellerName) ?></div>
+                    <div class="account-email"><?= esc($sellerEmail) ?></div>
+                </div>
+            </div>
+
+            <button type="button" class="btn btn-outline-secondary w-100 btn-sm" data-bs-toggle="modal" data-bs-target="#profileModal">
+                <i class="bi bi-pencil-square me-1"></i> Edit Profile
+            </button>
+
             <a class="logout-link" href="../logout.php"><i class="bi bi-box-arrow-right me-1"></i> Logout</a>
         </div>
     </aside>
@@ -432,7 +616,8 @@ if ($viewOrderId !== '') {
                         <?php foreach ($inventoryRows as $idx => $product): ?>
                             <?php
                             $stock = (int) $product['stock'];
-                            $status = $product['status'] ?: productStatusFromStock($stock);
+                            // Derive status from current stock to keep UI accurate.
+                            $status = productStatusFromStock($stock);
                             $statusClass = 'status-in-stock';
                             if ($status === 'Low Stock') {
                                 $statusClass = 'status-low-stock';
@@ -759,7 +944,7 @@ if ($viewOrderId !== '') {
 <div class="modal fade" id="addProductModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <form method="post">
+            <form method="post" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="add_product">
                 <div class="modal-header border-0 pb-0">
                     <div>
@@ -772,6 +957,11 @@ if ($viewOrderId !== '') {
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Product Name <span class="text-danger">*</span></label>
                         <input type="text" name="name" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Product Image</label>
+                        <input type="file" name="image" class="form-control" accept="image/*">
+                        <div class="text-muted small mt-1">Optional. JPG/PNG/WebP/GIF</div>
                     </div>
                     <div class="row g-2 mb-2">
                         <div class="col-md-6">
@@ -810,7 +1000,7 @@ if ($viewOrderId !== '') {
 <div class="modal fade" id="editProductModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
-            <form method="post">
+            <form method="post" enctype="multipart/form-data">
                 <input type="hidden" name="action" value="edit_product">
                 <input type="hidden" name="id" id="edit-id">
                 <div class="modal-header border-0 pb-0">
@@ -824,6 +1014,11 @@ if ($viewOrderId !== '') {
                     <div class="mb-3">
                         <label class="form-label fw-semibold">Product Name</label>
                         <input type="text" name="name" id="edit-name" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Replace Image</label>
+                        <input type="file" name="image" class="form-control" accept="image/*">
+                        <div class="text-muted small mt-1">Optional. Leave empty to keep current image.</div>
                     </div>
                     <div class="row g-2 mb-2">
                         <div class="col-md-6">
@@ -874,6 +1069,50 @@ if ($viewOrderId !== '') {
                         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" class="btn btn-dark"><i class="bi bi-trash"></i> Yes, Delete</button>
                     </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="profileModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="action" value="update_profile">
+                <div class="modal-header border-0 pb-0">
+                    <div>
+                        <h5 class="modal-title fw-bold">Edit Profile</h5>
+                        <div class="text-muted small">Update your name, email, and profile image</div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body pt-3">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Full Name</label>
+                        <input type="text" name="name" class="form-control" value="<?= esc($sellerName) ?>" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Email</label>
+                        <input type="email" name="email" class="form-control" value="<?= esc($sellerEmail) ?>" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Profile Image</label>
+                        <input type="file" name="image" class="form-control" accept="image/*">
+                        <div class="text-muted small mt-1">Optional</div>
+                    </div>
+                    <?php if (!empty($sellerProfileImageUrl)): ?>
+                        <div class="mb-0 text-center">
+                            <div class="text-muted small fw-semibold mb-2">Current image</div>
+                            <div style="width:160px;height:160px;margin:0 auto;border-radius:12px;overflow:hidden;border:1px solid #e7e8ec;">
+                                <img src="<?= esc($sellerProfileImageUrl) ?>" alt="Profile" style="width:100%;height:100%;object-fit:cover;">
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-dark"><i class="bi bi-check2"></i> Save Changes</button>
                 </div>
             </form>
         </div>

@@ -16,8 +16,13 @@
             <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
                 <div class="card h-100 card-custom border-0 bg-white" style="cursor: pointer; transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-4px)'; this.classList.add('shadow');" onmouseout="this.style.transform='none'; this.classList.remove('shadow');">
                     <!-- Image -->
-                    <div class="bg-light d-flex align-items-center justify-content-center p-4 border-bottom" style="height: 180px; border-top-left-radius: 1rem; border-top-right-radius: 1rem;" @click="openModal(product)">
-                        <i class="bi bi-journal-text text-secondary opacity-50" style="font-size: 48px;"></i>
+                    <div class="bg-light d-flex align-items-center justify-content-center p-4 border-bottom" style="height: 180px; border-top-left-radius: 1rem; border-top-right-radius: 1rem; overflow:hidden;" @click="openModal(product)">
+                        <template x-if="product.image_url">
+                            <img :src="product.image_url" alt="" style="max-width:100%; max-height:100%; object-fit:contain;">
+                        </template>
+                        <template x-if="!product.image_url">
+                            <i class="bi bi-journal-text text-secondary opacity-50" style="font-size: 48px;"></i>
+                        </template>
                     </div>
                     <!-- Body -->
                     <div class="card-body p-4 d-flex flex-column">

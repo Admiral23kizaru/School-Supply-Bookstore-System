@@ -35,6 +35,26 @@
     </div>
   </div>
   <?php endif; ?>
+
+  <?php if (isset($_GET['error']) && $_GET['error'] == 'banned'): ?>
+  <div class="alert alert-danger d-flex align-items-center py-3 rounded-xl mb-4" role="alert" style="background-color: #fef2f2; border-color: #fecaca; color: #991b1b;">
+    <i class="bi bi-slash-circle-fill me-2 fs-5"></i>
+    <div>
+      <strong class="d-block" style="line-height:1; font-size:14px;">Account is banned</strong>
+      <span style="font-size:13px;">Your account has been banned by the admin.</span>
+    </div>
+  </div>
+  <?php endif; ?>
+
+  <?php if (isset($_GET['error']) && $_GET['error'] == 'suspended'): ?>
+  <div class="alert alert-warning d-flex align-items-center py-3 rounded-xl mb-4" role="alert" style="background-color: #fffbeb; border-color: #fcd34d; color: #92400e;">
+    <i class="bi bi-pause-circle-fill me-2 fs-5"></i>
+    <div>
+      <strong class="d-block" style="line-height:1; font-size:14px;">Account is suspended</strong>
+      <span style="font-size:13px;">Your account is temporarily suspended.</span>
+    </div>
+  </div>
+  <?php endif; ?>
   
   <form method="POST" action="index.php?action=login">
       <div class="mb-3">

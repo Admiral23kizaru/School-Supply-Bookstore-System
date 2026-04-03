@@ -35,8 +35,13 @@
                         <div class="d-flex flex-column flex-sm-row align-items-start align-items-sm-center justify-content-between gap-3 gap-sm-4 py-3 border-bottom border-light">
                             
                             <div class="d-flex align-items-center gap-3 gap-sm-4 flex-grow-1 min-w-0">
-                                <div class="bg-light rounded-4 d-flex align-items-center justify-content-center border" style="width: 80px; height: 80px; flex-shrink:0;">
-                                    <i class="bi bi-journal-text text-secondary opacity-50 fs-4"></i>
+                                <div class="bg-light rounded-4 d-flex align-items-center justify-content-center border" style="width: 80px; height: 80px; flex-shrink:0; overflow:hidden;">
+                                    <template x-if="item.image_url">
+                                        <img :src="item.image_url" alt="" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                                    </template>
+                                    <template x-if="!item.image_url">
+                                        <i class="bi bi-journal-text text-secondary opacity-50 fs-4"></i>
+                                    </template>
                                 </div>
                                 <div class="min-w-0">
                                     <p class="text-gray-400 fw-bold text-uppercase mb-1" style="font-size: 10px; letter-spacing: 1px;" x-text="item.category"></p>

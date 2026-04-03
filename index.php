@@ -2,6 +2,30 @@
 session_start();
 require_once __DIR__ . '/db/db.php';
 
+function resolveAccountStatus(mysqli $conn, string $table, int $id): string
+{
+    // Prevent fatal errors if the admin never created the column yet.
+    try {
+        $colCheck = $conn->query("SHOW COLUMNS FROM `$table` LIKE 'account_status'");
+        if ($colCheck && (int) $colCheck->num_rows > 0) {
+            $stmt = $conn->prepare("SELECT account_status FROM `$table` WHERE id = ? LIMIT 1");
+            if ($stmt) {
+                $stmt->bind_param("i", $id);
+                $stmt->execute();
+                $res = $stmt->get_result();
+                $row = $res ? $res->fetch_assoc() : null;
+                if ($row && isset($row['account_status'])) {
+                    $val = (string) $row['account_status'];
+                    return $val !== '' ? $val : 'Active';
+                }
+            }
+        }
+    } catch (Throwable $e) {
+        // Default to Active.
+    }
+    return 'Active';
+}
+
 // POST Request Handler for both Login and Registration
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
     $email = trim($_POST['email']);
@@ -68,6 +92,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
         error_log("User found in sellers table. Verifying password...");
         if (password_verify($password, $user['password'])) {
             error_log("Seller authenticated successfully. Redirecting.");
+            $status = resolveAccountStatus($conn, 'sellers', (int) $user['id']);
+            if ($status !== 'Active') {
+                $error = $status === 'Banned' ? 'banned' : 'suspended';
+                header('Location: index.php?action=login&error=' . $error);
+                exit;
+            }
+
             $_SESSION['role'] = 'seller';
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['email'] = $email;
@@ -86,6 +117,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
         error_log("User found in customers table. Verifying password...");
         if (password_verify($password, $user['password'])) {
             error_log("Customer authenticated successfully. Redirecting.");
+            $status = resolveAccountStatus($conn, 'customers', (int) $user['id']);
+            if ($status !== 'Active') {
+                $error = $status === 'Banned' ? 'banned' : 'suspended';
+                header('Location: index.php?action=login&error=' . $error);
+                exit;
+            }
+
             $_SESSION['role'] = 'customer';
             $_SESSION['user_id'] = $user['id'];
             $_SESSION['email'] = $email;

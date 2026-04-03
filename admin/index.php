@@ -23,6 +23,19 @@ function product_status(int $stock): string
     return 'In Stock';
 }
 
+function ensureAccountStatusColumns($conn): void
+{
+    foreach (['customers', 'sellers'] as $table) {
+        $check = $conn->query("SHOW COLUMNS FROM `$table` LIKE 'account_status'");
+        if ($check && (int) $check->num_rows === 0) {
+            // Used by admin ban/suspend actions.
+            $conn->query("ALTER TABLE `$table` ADD account_status ENUM('Active','Suspended','Banned') NOT NULL DEFAULT 'Active'");
+        }
+    }
+}
+
+ensureAccountStatusColumns($conn);
+
 $adminId = (int) ($_SESSION['user_id'] ?? 0);
 $adminName = 'Admin Account';
 $adminEmail = $_SESSION['email'] ?? 'admin@gmail.com';
@@ -38,7 +51,7 @@ if ($adminStmt) {
 }
 
 $tab = $_GET['tab'] ?? 'dashboard';
-$allowedTabs = ['dashboard', 'users', 'products', 'orders', 'reports'];
+$allowedTabs = ['dashboard', 'profile', 'users', 'products', 'orders', 'reports'];
 if (!in_array($tab, $allowedTabs, true)) {
     $tab = 'dashboard';
 }
@@ -50,8 +63,58 @@ $search = trim($_GET['search'] ?? '');
 $viewUser = (int) ($_GET['user'] ?? 0);
 $viewType = trim($_GET['type'] ?? 'customer');
 
+$redirectAfterUserAction = $_POST['redirect'] ?? 'index.php?tab=users';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['admin_action'])) {
+    $adminAction = (string) ($_POST['admin_action'] ?? '');
+    $targetType = (string) ($_POST['target_type'] ?? '');
+    $targetId = (int) ($_POST['target_id'] ?? 0);
+
+    if ($adminAction === 'update_admin_profile') {
+        $newName = trim($_POST['name'] ?? '');
+        if ($newName !== '' && $adminId > 0) {
+            $stmt = $conn->prepare("UPDATE admins SET name = ? WHERE id = ?");
+            if ($stmt) {
+                $stmt->bind_param("si", $newName, $adminId);
+                $stmt->execute();
+            }
+        }
+        $redirectAfterUserAction = $_POST['redirect'] ?? 'index.php?tab=profile';
+        header('Location: ' . $redirectAfterUserAction);
+        exit;
+    }
+
+    $status = null;
+    if ($adminAction === 'ban_user') {
+        $status = 'Banned';
+    } elseif ($adminAction === 'unban_user') {
+        $status = 'Active';
+    } elseif ($adminAction === 'suspend_user') {
+        $status = 'Suspended';
+    } elseif ($adminAction === 'activate_user') {
+        $status = 'Active';
+    }
+
+    $table = null;
+    if ($targetType === 'customer') {
+        $table = 'customers';
+    } elseif ($targetType === 'seller') {
+        $table = 'sellers';
+    }
+
+    if ($status !== null && $table !== null && $targetId > 0) {
+        $stmt = $conn->prepare("UPDATE `$table` SET account_status = ? WHERE id = ?");
+        if ($stmt) {
+            $stmt->bind_param("si", $status, $targetId);
+            $stmt->execute();
+        }
+    }
+
+    header('Location: ' . $redirectAfterUserAction);
+    exit;
+}
+
 $users = [];
-$customerQ = $conn->query("SELECT id, name, email, created_at FROM customers ORDER BY id ASC");
+$customerQ = $conn->query("SELECT id, name, email, created_at, account_status FROM customers ORDER BY id ASC");
 while ($customerQ && ($row = $customerQ->fetch_assoc())) {
     $uid = 'U-' . str_pad((string) $row['id'], 3, '0', STR_PAD_LEFT);
     $ordersQ = $conn->prepare("SELECT COUNT(*) c FROM orders WHERE customer_id = ?");
@@ -66,15 +129,16 @@ while ($customerQ && ($row = $customerQ->fetch_assoc())) {
         'role' => 'Customer',
         'joined' => date('M j, Y', strtotime($row['created_at'])),
         'activity' => $orderCount . ($orderCount === 1 ? ' order' : ' orders'),
-        'status' => $orderCount > 0 ? 'Active' : 'Inactive',
+        'status' => $row['account_status'] ?: 'Active',
         'type' => 'customer',
     ];
 }
 
-$sellerQ = $conn->query("SELECT id, name, email, created_at FROM sellers ORDER BY id ASC");
+$sellerQ = $conn->query("SELECT id, name, email, created_at, account_status FROM sellers ORDER BY id ASC");
 while ($sellerQ && ($row = $sellerQ->fetch_assoc())) {
     $uid = 'U-' . str_pad((string) (100 + $row['id']), 3, '0', STR_PAD_LEFT);
-    $prodQ = $conn->prepare("SELECT COUNT(*) c FROM products WHERE seller_id = ?");
+    // Match seller portal inventory query which also includes seller_id IS NULL.
+    $prodQ = $conn->prepare("SELECT COUNT(*) c FROM products WHERE seller_id = ? OR seller_id IS NULL");
     $prodQ->bind_param("i", $row['id']);
     $prodQ->execute();
     $productCount = (int) ($prodQ->get_result()->fetch_assoc()['c'] ?? 0);
@@ -86,7 +150,7 @@ while ($sellerQ && ($row = $sellerQ->fetch_assoc())) {
         'role' => 'Seller',
         'joined' => date('M j, Y', strtotime($row['created_at'])),
         'activity' => $productCount . ($productCount === 1 ? ' product' : ' products'),
-        'status' => $productCount > 0 ? 'Active' : 'Inactive',
+        'status' => $row['account_status'] ?: 'Active',
         'type' => 'seller',
     ];
 }
@@ -224,6 +288,64 @@ foreach ($users as $u) {
         break;
     }
 }
+
+// Data for the User Detail "Listed Products" table:
+// - Seller: show products listed by that seller
+// - Customer: show recently ordered products for that customer
+$userDetailProducts = [];
+if ($selectedUser) {
+    if ($selectedUser['type'] === 'seller') {
+        $sellerDetailStmt = $conn->prepare("
+            SELECT p.id, p.name, p.category, p.price, p.stock
+            FROM products p
+                WHERE p.seller_id = ? OR p.seller_id IS NULL
+            ORDER BY p.id DESC
+            LIMIT 6
+        ");
+        if ($sellerDetailStmt) {
+            $sellerDetailStmt->bind_param("i", $selectedUser['id']);
+            $sellerDetailStmt->execute();
+            $res = $sellerDetailStmt->get_result();
+            while ($p = $res->fetch_assoc()) {
+                $userDetailProducts[] = [
+                    'id' => (int) $p['id'],
+                    'name' => $p['name'],
+                    'sku' => 'SKU-' . str_pad((string) $p['id'], 3, '0', STR_PAD_LEFT),
+                    'category' => ucfirst(strtolower($p['category'])),
+                    'price' => (float) $p['price'],
+                    'stock' => (int) $p['stock'],
+                    'status' => product_status((int) $p['stock']),
+                ];
+            }
+        }
+    } elseif ($selectedUser['type'] === 'customer') {
+        $customerDetailStmt = $conn->prepare("
+            SELECT p.id, p.name, p.category, p.price, p.stock, o.created_at
+            FROM orders o
+            INNER JOIN order_items oi ON oi.order_id = o.id
+            INNER JOIN products p ON p.id = oi.product_id
+            WHERE o.customer_id = ?
+            ORDER BY o.created_at DESC, oi.id DESC
+            LIMIT 6
+        ");
+        if ($customerDetailStmt) {
+            $customerDetailStmt->bind_param("i", $selectedUser['id']);
+            $customerDetailStmt->execute();
+            $res = $customerDetailStmt->get_result();
+            while ($p = $res->fetch_assoc()) {
+                $userDetailProducts[] = [
+                    'id' => (int) $p['id'],
+                    'name' => $p['name'],
+                    'sku' => 'SKU-' . str_pad((string) $p['id'], 3, '0', STR_PAD_LEFT),
+                    'category' => ucfirst(strtolower($p['category'])),
+                    'price' => (float) $p['price'],
+                    'stock' => (int) $p['stock'],
+                    'status' => product_status((int) $p['stock']),
+                ];
+            }
+        }
+    }
+}
 ?>
 <!doctype html>
 <html lang="en">
@@ -262,6 +384,8 @@ foreach ($users as $u) {
         .table td { font-size: 13px; color: #4a5160; padding: 10px; vertical-align: middle; }
         .status-pill { font-size: 11px; border-radius: 6px; border: 1px solid #d5d8df; padding: 2px 8px; display: inline-block; background: #fff; }
         .status-delivered, .status-active, .status-completed, .status-in-stock { border-color: #111; color: #111; }
+        .status-suspended { background: #fff8ef; border-color: #f0c084; color: #7a4a00; }
+        .status-banned { background: #fff3f4; border-color: #df9ca0; color: #8a1c1c; }
         .status-pending, .status-inactive, .status-cancelled, .status-out-of-stock { background: #f3f4f7; color: #9aa2af; border-color: #e0e3e8; }
         .status-processing, .status-low-stock { background: #f7f8fa; color: #8e96a4; border-color: #dde1e7; }
         .footer { display: flex; justify-content: space-between; align-items: center; border: 1px solid #e7eaf0; border-top: 0; border-radius: 0 0 8px 8px; color: #a0a7b4; font-size: 12px; padding: 10px 12px; }
@@ -326,6 +450,28 @@ foreach ($users as $u) {
                 </div>
             <?php endif; ?>
 
+            <?php if ($tab === 'profile'): ?>
+                <div class="header d-flex justify-content-between align-items-start">
+                    <div>
+                        <h1 class="page-title">Profile</h1>
+                        <div class="subtitle">Edit your account details</div>
+                    </div>
+                </div>
+                <div class="inner">
+                    <form method="post" class="row g-3 align-items-end">
+                        <input type="hidden" name="admin_action" value="update_admin_profile">
+                        <input type="hidden" name="redirect" value="index.php?tab=profile">
+                        <div class="col-md-6">
+                            <label class="form-label text-secondary small fw-medium mb-1">Full Name</label>
+                            <input type="text" name="name" class="form-control" value="<?= esc($adminName) ?>" required>
+                        </div>
+                        <div class="col-md-6 text-end">
+                            <button type="submit" class="btn btn-outline-dark btn-slim"><i class="bi bi-save"></i> Save Changes</button>
+                        </div>
+                    </form>
+                </div>
+            <?php endif; ?>
+
             <?php if ($tab === 'users'): ?>
                 <?php if ($selectedUser): ?>
                     <div class="header d-flex justify-content-between align-items-start">
@@ -356,18 +502,44 @@ foreach ($users as $u) {
                         </div>
                         <div class="table-wrap mb-3">
                             <table class="table mb-0">
-                                <thead><tr><th colspan="7">Listed Products</th></tr></thead>
+                                <thead><tr><th colspan="7"><?= esc($selectedUser['type'] === 'seller' ? 'Listed Products' : 'Recently Ordered Products') ?></th></tr></thead>
                                 <thead><tr><th>#</th><th>Product Name</th><th>SKU</th><th>Category</th><th>Price</th><th>Stock</th><th>Status</th></tr></thead>
                                 <tbody>
-                                <?php foreach (array_slice($products, 0, 3) as $idx => $p): ?>
-                                    <tr><td><?= $idx + 1 ?></td><td><strong><?= esc($p['name']) ?></strong></td><td><?= esc($p['sku']) ?></td><td><?= esc($p['category']) ?></td><td><strong>₱<?= number_format($p['price'], 2) ?></strong></td><td><?= $p['stock'] ?></td><td><span class="status-pill status-<?= strtolower(str_replace(' ', '-', $p['status'])) ?>"><?= esc($p['status']) ?></span></td></tr>
-                                <?php endforeach; ?>
+                                <?php if (count($userDetailProducts) === 0): ?>
+                                    <tr><td colspan="7" class="text-center py-4 text-muted">No products found.</td></tr>
+                                <?php else: ?>
+                                    <?php foreach (array_slice($userDetailProducts, 0, 6) as $idx => $p): ?>
+                                        <tr><td><?= $idx + 1 ?></td><td><strong><?= esc($p['name']) ?></strong></td><td><?= esc($p['sku']) ?></td><td><?= esc($p['category']) ?></td><td><strong>₱<?= number_format($p['price'], 2) ?></strong></td><td><?= $p['stock'] ?></td><td><span class="status-pill status-<?= strtolower(str_replace(' ', '-', $p['status'])) ?>"><?= esc($p['status']) ?></span></td></tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
                                 </tbody>
                             </table>
                         </div>
                         <div class="d-flex justify-content-end gap-2">
                             <a href="index.php?tab=users" class="btn btn-outline-dark btn-slim"><i class="bi bi-arrow-left"></i> Back to Users</a>
-                            <button class="btn btn-outline-secondary btn-slim"><i class="bi bi-slash-circle"></i> Suspend Account</button>
+                            <?php
+                            $currentStatus = $selectedUser['status'] ?? 'Active';
+                            $actionLabel = 'Suspend Account';
+                            $actionValue = 'suspend_user';
+                            $actionIcon = 'bi bi-slash-circle';
+
+                            if ($currentStatus === 'Banned') {
+                                $actionLabel = 'Unban Account';
+                                $actionValue = 'unban_user';
+                                $actionIcon = 'bi bi-arrow-counterclockwise';
+                            } elseif ($currentStatus === 'Suspended') {
+                                $actionLabel = 'Activate Account';
+                                $actionValue = 'activate_user';
+                                $actionIcon = 'bi bi-check-circle';
+                            }
+                            ?>
+                            <form method="post" class="d-inline">
+                                <input type="hidden" name="admin_action" value="<?= esc($actionValue) ?>">
+                                <input type="hidden" name="target_type" value="<?= esc($selectedUser['type'] ?? 'customer') ?>">
+                                <input type="hidden" name="target_id" value="<?= (int) ($selectedUser['id'] ?? 0) ?>">
+                                <input type="hidden" name="redirect" value="index.php?tab=users&type=<?= esc($selectedUser['type'] ?? 'customer') ?>&user=<?= (int) ($selectedUser['id'] ?? 0) ?>">
+                                <button type="submit" class="btn btn-outline-secondary btn-slim"><i class="<?= esc($actionIcon) ?>"></i> <?= esc($actionLabel) ?></button>
+                            </form>
                         </div>
                     </div>
                 <?php else: ?>
@@ -388,7 +560,26 @@ foreach ($users as $u) {
                                 <?php foreach ($users as $u): ?>
                                     <tr>
                                         <td><?= esc($u['uid']) ?></td><td><strong><?= esc($u['name']) ?></strong></td><td><?= esc($u['email']) ?></td><td><span class="status-pill"><?= esc($u['role']) ?></span></td><td><?= esc($u['joined']) ?></td><td><?= esc($u['activity']) ?></td><td><span class="status-pill status-<?= strtolower($u['status']) ?>"><?= esc($u['status']) ?></span></td>
-                                        <td class="text-end"><a class="btn btn-sm btn-outline-secondary btn-slim" href="index.php?tab=users&type=<?= esc($u['type']) ?>&user=<?= $u['id'] ?>"><i class="bi bi-eye"></i> View</a> <button class="btn btn-sm btn-outline-secondary btn-slim"><i class="bi bi-slash-circle"></i> Ban</button></td>
+                                        <td class="text-end">
+                                            <a class="btn btn-sm btn-outline-secondary btn-slim" href="index.php?tab=users&type=<?= esc($u['type']) ?>&user=<?= (int) $u['id'] ?>"><i class="bi bi-eye"></i> View</a>
+                                            <?php if (($u['status'] ?? 'Active') === 'Banned'): ?>
+                                                <form method="post" class="d-inline ms-1">
+                                                    <input type="hidden" name="admin_action" value="unban_user">
+                                                    <input type="hidden" name="target_type" value="<?= esc($u['type']) ?>">
+                                                    <input type="hidden" name="target_id" value="<?= (int) $u['id'] ?>">
+                                                    <input type="hidden" name="redirect" value="index.php?tab=users<?= $roleFilter !== '' ? '&role=' . urlencode($roleFilter) : '' ?>">
+                                                    <button type="submit" class="btn btn-sm btn-outline-secondary btn-slim"><i class="bi bi-arrow-counterclockwise"></i> Unban</button>
+                                                </form>
+                                            <?php else: ?>
+                                                <form method="post" class="d-inline ms-1">
+                                                    <input type="hidden" name="admin_action" value="ban_user">
+                                                    <input type="hidden" name="target_type" value="<?= esc($u['type']) ?>">
+                                                    <input type="hidden" name="target_id" value="<?= (int) $u['id'] ?>">
+                                                    <input type="hidden" name="redirect" value="index.php?tab=users<?= $roleFilter !== '' ? '&role=' . urlencode($roleFilter) : '' ?>">
+                                                    <button type="submit" class="btn btn-sm btn-outline-secondary btn-slim"><i class="bi bi-slash-circle"></i> Ban</button>
+                                                </form>
+                                            <?php endif; ?>
+                                        </td>
                                     </tr>
                                 <?php endforeach; ?>
                                 </tbody>
