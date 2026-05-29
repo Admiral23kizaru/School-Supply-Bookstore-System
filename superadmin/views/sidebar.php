@@ -60,6 +60,7 @@
             </div>
         </div>
 
+        <a class="nav-link-custom <?= $tab === 'profile' ? 'active' : '' ?> mb-2 px-3 py-2 text-white" style="background: rgba(255,255,255,0.05); border-radius: 8px;" href="dashboard.php?tab=profile"><i class="bi bi-person-circle me-1"></i> My Profile</a>
         <a class="logout-link" href="../logout.php"><i class="bi bi-box-arrow-right me-1"></i> Logout</a>
     </div>
 </aside>

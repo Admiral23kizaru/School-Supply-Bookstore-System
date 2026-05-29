@@ -63,6 +63,15 @@
     <div class="form-text mt-1 text-secondary" style="font-size: 11px;">Use at least 8 characters for better security.</div>
   </div>
 
+  <div class="mb-3">
+    <label for="confirm_password" class="form-label small fw-medium text-secondary mb-1">Confirm Password</label>
+    <div class="input-group">
+      <span class="input-group-text bg-white text-secondary border-end-0 py-2"><i class="bi bi-lock-fill"></i></span>
+      <input type="password" class="form-control border-start-0 bg-white shadow-none py-2" id="confirm_password" name="confirm_password" required autocomplete="new-password">
+    </div>
+    <div class="invalid-feedback" id="passwordMismatchError" style="display: none; font-size: 11px;">Passwords do not match.</div>
+  </div>
+
   <div class="mb-4">
     <label for="role" class="form-label small fw-medium text-secondary mb-1">Role</label>
     <select class="form-select rounded-xl py-2 shadow-none" id="role" name="role" required>
@@ -93,6 +102,22 @@
       password.type = 'password';
       icon.classList.remove('bi-eye-slash');
       icon.classList.add('bi-eye');
+    }
+  });
+
+  const registerForm = document.querySelector('form[action="index.php?action=register"]');
+  const passwordInput = document.getElementById('password');
+  const confirmPasswordInput = document.getElementById('confirm_password');
+  const errorMsg = document.getElementById('passwordMismatchError');
+
+  registerForm.addEventListener('submit', function (e) {
+    if (passwordInput.value !== confirmPasswordInput.value) {
+      e.preventDefault();
+      confirmPasswordInput.classList.add('is-invalid');
+      errorMsg.style.display = 'block';
+    } else {
+      confirmPasswordInput.classList.remove('is-invalid');
+      errorMsg.style.display = 'none';
     }
   });
 </script>

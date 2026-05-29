@@ -47,6 +47,8 @@ function paginateRows(array $rows, int $page, int $perPage = 10): array
 $roleFilter = trim($_GET['role'] ?? '');
 $categoryFilter = trim($_GET['category'] ?? '');
 $orderStatusFilter = trim($_GET['status'] ?? '');
+$reportDateFrom = trim($_GET['date_from'] ?? '');
+$reportDateTo = trim($_GET['date_to'] ?? '');
 $search = trim($_GET['search'] ?? '');
 $viewUser = (int) ($_GET['user'] ?? 0);
 $viewType = trim($_GET['type'] ?? 'customer');
@@ -196,6 +198,7 @@ if ($orderStatusFilter !== '' && in_array($orderStatusFilter, ['Pending', 'Proce
 if ($search !== '') {
     $orders = array_values(array_filter($orders, fn($o) => stripos($o['id'], $search) !== false || stripos($o['customer'], $search) !== false));
 }
+$orders = sortOrdersByStatus($orders);
 $ordersPage = (int) ($_GET['orders_page'] ?? 1);
 $ordersPager = paginateRows($orders, $ordersPage, 10);
 $ordersPageRows = $ordersPager['rows'];
@@ -253,8 +256,15 @@ FROM order_items oi
 INNER JOIN orders o ON o.id = oi.order_id
 INNER JOIN products p ON p.id = oi.product_id
 LEFT JOIN sellers s ON s.id = p.seller_id
-ORDER BY o.created_at ASC
+WHERE 1=1
 ";
+if ($reportDateFrom !== '' && isValidReportDate($reportDateFrom)) {
+    $reportSql .= " AND DATE(o.created_at) >= '" . $conn->real_escape_string($reportDateFrom) . "'";
+}
+if ($reportDateTo !== '' && isValidReportDate($reportDateTo)) {
+    $reportSql .= " AND DATE(o.created_at) <= '" . $conn->real_escape_string($reportDateTo) . "'";
+}
+$reportSql .= " ORDER BY o.created_at ASC";
 $rep = $conn->query($reportSql);
 while ($rep && ($r = $rep->fetch_assoc())) {
     $reportRows[] = [

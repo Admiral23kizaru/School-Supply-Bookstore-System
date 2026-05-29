@@ -125,6 +125,10 @@ if ($customer_id <= 0 && $email !== '') {
     }
 }
 
+if ($customer_id > 0) {
+    $_SESSION['user_id'] = $customer_id;
+}
+
 $customerName = 'Customer Account';
 $customerProfileImageUrl = '';
 $customerAddress = '';
@@ -154,11 +158,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
             $uploadedUrl = handleProfileImageUpload($_FILES['image'], $appBaseUrl);
         }
 
+        // Password Change Logic
+        $currentPassword = $_POST['current_password'] ?? '';
+        $newPassword = $_POST['new_password'] ?? '';
+        $confirmNewPassword = $_POST['confirm_new_password'] ?? '';
+        $passwordToUpdate = null;
+        $errorRedirect = '';
+
+        if ($currentPassword !== '' || $newPassword !== '' || $confirmNewPassword !== '') {
+            $stmt = $conn->prepare("SELECT password FROM customers WHERE id = ? LIMIT 1");
+            if ($stmt) {
+                $stmt->bind_param("i", $customer_id);
+                $stmt->execute();
+                $res = $stmt->get_result();
+                if ($user = $res->fetch_assoc()) {
+                    if (!password_verify($currentPassword, $user['password'])) {
+                        $errorRedirect = '&error=wrong_password';
+                    } elseif ($newPassword !== $confirmNewPassword) {
+                        $errorRedirect = '&error=password_mismatch';
+                    } elseif (strlen($newPassword) < 8) {
+                        $errorRedirect = '&error=weak_password';
+                    } else {
+                        $passwordToUpdate = password_hash($newPassword, PASSWORD_DEFAULT);
+                    }
+                }
+            }
+        }
+
+        if ($errorRedirect) {
+            header('Location: customer_dashboard.php?' . $errorRedirect);
+            exit;
+        }
+
         try {
-            if ($uploadedUrl) {
+            if ($uploadedUrl && $passwordToUpdate) {
+                $stmt = $conn->prepare("UPDATE customers SET name = ?, email = ?, profile_image_url = ?, password = ? WHERE id = ?");
+                if ($stmt) {
+                    $stmt->bind_param("ssssi", $newName, $newEmail, $uploadedUrl, $passwordToUpdate, $customer_id);
+                    $stmt->execute();
+                }
+            } elseif ($uploadedUrl && !$passwordToUpdate) {
                 $stmt = $conn->prepare("UPDATE customers SET name = ?, email = ?, profile_image_url = ? WHERE id = ?");
                 if ($stmt) {
                     $stmt->bind_param("sssi", $newName, $newEmail, $uploadedUrl, $customer_id);
+                    $stmt->execute();
+                }
+            } elseif (!$uploadedUrl && $passwordToUpdate) {
+                $stmt = $conn->prepare("UPDATE customers SET name = ?, email = ?, password = ? WHERE id = ?");
+                if ($stmt) {
+                    $stmt->bind_param("sssi", $newName, $newEmail, $passwordToUpdate, $customer_id);
                     $stmt->execute();
                 }
             } else {
@@ -510,13 +558,30 @@ if ($stmt) {
                             <div class="text-muted small mt-1">Optional</div>
                         </div>
                         <?php if (!empty($customerProfileImageUrl)): ?>
-                            <div class="mb-0 text-center">
+                            <div class="mb-3 text-center">
                                 <div class="text-secondary small fw-semibold mb-2">Current image</div>
                                 <div style="width:160px;height:160px;margin:0 auto;border-radius:12px;overflow:hidden;border:1px solid #e7e8ec;">
                                     <img src="<?= esc($customerProfileImageUrl) ?>" alt="Profile" style="width:100%;height:100%;object-fit:cover;">
                                 </div>
                             </div>
                         <?php endif; ?>
+                        <hr>
+                        <div class="mb-3">
+                            <div class="fw-bold mb-1">Change Password</div>
+                            <div class="text-muted small mb-2">Leave blank if you don't want to change your password.</div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold text-secondary small">Current password</label>
+                            <input type="password" name="current_password" class="form-control" autocomplete="current-password">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold text-secondary small">New password</label>
+                            <input type="password" name="new_password" class="form-control" autocomplete="new-password">
+                        </div>
+                        <div class="mb-0">
+                            <label class="form-label fw-semibold text-secondary small">Confirm new password</label>
+                            <input type="password" name="confirm_new_password" class="form-control" autocomplete="new-password">
+                        </div>
                     </div>
                     <div class="modal-footer border-0">
                         <button type="button" class="btn btn-light border fw-semibold flex-fill btn-custom text-secondary shadow-sm" data-bs-dismiss="modal">Cancel</button>
@@ -610,6 +675,7 @@ if ($stmt) {
                 perPage: 10,
                 productPage: 1,
                 orderPage: 1,
+                orderStatusFilter: '',
                 cart: [],
                 checkoutForm: {
                     name: <?php echo json_encode($customerName); ?>,
@@ -660,24 +726,37 @@ if ($stmt) {
                     return Math.min(this.productRangeStart + this.perPage - 1, this.filteredProducts.length);
                 },
 
+                get filteredOrders() {
+                    const statusOrder = { Pending: 1, Processing: 2, Delivered: 3, Fulfilled: 3, Cancelled: 4 };
+                    let list = [...this.orders];
+                    if (this.orderStatusFilter) {
+                        list = list.filter(o => o.status === this.orderStatusFilter);
+                    }
+                    list.sort((a, b) => {
+                        const diff = (statusOrder[a.status] ?? 99) - (statusOrder[b.status] ?? 99);
+                        return diff !== 0 ? diff : 0;
+                    });
+                    return list;
+                },
+
                 get totalOrderPages() {
-                    return Math.max(1, Math.ceil(this.orders.length / this.perPage));
+                    return Math.max(1, Math.ceil(this.filteredOrders.length / this.perPage));
                 },
 
                 get paginatedOrders() {
                     const safePage = Math.min(this.orderPage, this.totalOrderPages);
                     const start = (safePage - 1) * this.perPage;
-                    return this.orders.slice(start, start + this.perPage);
+                    return this.filteredOrders.slice(start, start + this.perPage);
                 },
 
                 get orderRangeStart() {
-                    if (this.orders.length === 0) return 0;
+                    if (this.filteredOrders.length === 0) return 0;
                     return ((Math.min(this.orderPage, this.totalOrderPages) - 1) * this.perPage) + 1;
                 },
 
                 get orderRangeEnd() {
-                    if (this.orders.length === 0) return 0;
-                    return Math.min(this.orderRangeStart + this.perPage - 1, this.orders.length);
+                    if (this.filteredOrders.length === 0) return 0;
+                    return Math.min(this.orderRangeStart + this.perPage - 1, this.filteredOrders.length);
                 },
 
                 prevProductPage() {
@@ -746,14 +825,20 @@ if ($stmt) {
                             return;
                         }
                         this.cart[index].qty += change;
-                        if(this.cart[index].qty <= 0) {
-                            this.cart.splice(index, 1);
-                        }
                     }
+                },
+
+                removeFromCart(id) {
+                    if (!confirm('Remove this item from your cart?')) return;
+                    this.cart = this.cart.filter(i => i.id !== id);
                 },
 
                 async checkout() {
                     if (this.cart.length === 0) return;
+                    if (this.cart.some(item => item.qty <= 0)) {
+                        alert('Please make all cart quantities at least 1 before checkout.');
+                        return;
+                    }
                     if (!this.checkoutForm.name || !this.checkoutForm.email || !this.checkoutForm.address || !this.checkoutForm.payment_method) {
                         alert('Please complete the customer details before checkout.');
                         return;
@@ -785,6 +870,31 @@ if ($stmt) {
                         alert('A network error occurred.');
                     } finally {
                         this.isLoading = false;
+                    }
+                },
+
+                async cancelOrder(order) {
+                    if (!order || !order.id) return;
+                    if (!confirm('Cancel this order?')) return;
+
+                    try {
+                        const response = await fetch('cancel_order.php', {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ order_id: order.id })
+                        });
+                        const result = await response.json();
+
+                        if (result.success) {
+                            order.status = result.status || 'Cancelled';
+                            alert('Order cancelled successfully.');
+                        } else {
+                            alert(result.error || 'Unable to cancel order.');
+                        }
+                    } catch (error) {
+                        console.error(error);
+                        alert('A network error occurred.');
                     }
                 }
             }

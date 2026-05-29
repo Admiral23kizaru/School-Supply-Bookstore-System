@@ -46,13 +46,18 @@
                                 </div>
                             </div>
                             
-                            <div class="d-flex align-items-center justify-content-between w-100" style="max-width: 200px;">
+                            <div class="d-flex align-items-center justify-content-between w-100 flex-wrap gap-2" style="max-width: 260px;">
                                 <div class="d-flex align-items-center gap-2 bg-white border rounded-3 px-2 py-1 shadow-sm">
                                     <button @click="updateQty(item.id, -1)" class="btn btn-sm btn-link text-secondary p-1 text-decoration-none d-flex align-items-center justify-content-center" style="width:24px; height:24px;"><i class="bi bi-dash"></i></button>
                                     <span class="text-center fw-semibold small" style="width:20px;" x-text="item.qty"></span>
                                     <button @click="updateQty(item.id, 1)" class="btn btn-sm btn-link text-secondary p-1 text-decoration-none d-flex align-items-center justify-content-center" style="width:24px; height:24px;"><i class="bi bi-plus"></i></button>
                                 </div>
-                                <div class="fw-bold text-dark text-end font-monospace" style="width:80px;" x-text="'₱' + (item.price * item.qty).toFixed(2)"></div>
+                                <div class="d-flex align-items-center gap-2 ms-sm-auto">
+                                    <div class="fw-bold text-dark text-end font-monospace" style="width:80px;" x-text="'₱' + (item.price * item.qty).toFixed(2)"></div>
+                                    <button type="button" @click="removeFromCart(item.id)" class="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center" style="width:32px; height:32px;" title="Remove item">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </template>

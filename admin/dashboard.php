@@ -193,6 +193,9 @@ function pageUrl(array $overrides = []): string
                             'invalid_email' => 'Please enter a valid email address.',
                             'email_taken' => 'That email is already in use by another admin account.',
                             'save_failed' => 'Could not save changes. Please try again.',
+                            'wrong_password' => 'Current password is incorrect.',
+                            'password_mismatch' => 'New passwords do not match.',
+                            'weak_password' => 'New password must be at least 8 characters.',
                             default => 'Something went wrong. Please try again.',
                         };
                         ?>
@@ -228,6 +231,24 @@ function pageUrl(array $overrides = []): string
                                         <label class="form-label text-secondary small fw-medium mb-1">Email</label>
                                         <input type="email" name="email" class="form-control" value="<?= esc($adminEmail) ?>" required autocomplete="email">
                                     </div>
+                                <div class="row g-3 mt-1">
+                                    <div class="col-12"><hr class="text-muted"></div>
+                                    <div class="col-12">
+                                        <div class="detail-title mb-2">Change password</div>
+                                        <div class="text-muted small mb-3" style="font-size: 12px;">Leave blank if you don't want to change your password.</div>
+                                    </div>
+                                    <div class="col-md-12">
+                                        <label class="form-label text-secondary small fw-medium mb-1">Current password</label>
+                                        <input type="password" name="current_password" class="form-control" autocomplete="current-password">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label text-secondary small fw-medium mb-1">New password</label>
+                                        <input type="password" name="new_password" class="form-control" autocomplete="new-password">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label text-secondary small fw-medium mb-1">Confirm new password</label>
+                                        <input type="password" name="confirm_new_password" class="form-control" autocomplete="new-password">
+                                    </div>
                                 </div>
                                 <div class="mt-4 d-flex flex-wrap gap-2 justify-content-end">
                                     <a href="dashboard.php?tab=dashboard" class="btn btn-outline-secondary btn-slim">Cancel</a>
@@ -252,6 +273,21 @@ function pageUrl(array $overrides = []): string
                 <?php endif; ?>
                 <?php if (isset($_GET['error']) && $_GET['error'] === 'email_taken'): ?>
                     <div class="inner pb-0"><div class="alert alert-danger py-2 mb-0">Email is already used by another account.</div></div>
+                <?php endif; ?>
+                <?php if (isset($_GET['error']) && $_GET['error'] === 'invalid_password'): ?>
+                    <div class="inner pb-0"><div class="alert alert-danger py-2 mb-0">New password must be at least 8 characters.</div></div>
+                <?php endif; ?>
+                <?php if (isset($_GET['error']) && $_GET['error'] === 'invalid_role'): ?>
+                    <div class="inner pb-0"><div class="alert alert-danger py-2 mb-0">Please select a valid role.</div></div>
+                <?php endif; ?>
+                <?php if (isset($_GET['error']) && $_GET['error'] === 'role_change_blocked'): ?>
+                    <div class="inner pb-0"><div class="alert alert-warning py-2 mb-0">Cannot change role while the user still has linked orders/products.</div></div>
+                <?php endif; ?>
+                <?php if (isset($_GET['error']) && $_GET['error'] === 'save_failed'): ?>
+                    <div class="inner pb-0"><div class="alert alert-danger py-2 mb-0">Unable to save this user update. Please try again.</div></div>
+                <?php endif; ?>
+                <?php if (isset($_GET['success']) && $_GET['success'] === 'admin_added'): ?>
+                    <div class="inner pb-0"><div class="alert alert-success py-2 mb-0">Admin account created successfully.</div></div>
                 <?php endif; ?>
                 <?php if (isset($_GET['error']) && $_GET['error'] === 'delete_failed'): ?>
                     <div class="inner pb-0"><div class="alert alert-warning py-2 mb-0">Cannot delete this user (might have related records).</div></div>
@@ -370,13 +406,24 @@ function pageUrl(array $overrides = []): string
                                     <input type="hidden" name="target_type" value="<?= esc($selectedUser['type'] ?? 'customer') ?>">
                                     <input type="hidden" name="target_id" value="<?= (int) ($selectedUser['id'] ?? 0) ?>">
                                     <input type="hidden" name="redirect" value="../dashboard.php?tab=users&type=<?= esc($selectedUser['type'] ?? 'customer') ?>&user=<?= (int) ($selectedUser['id'] ?? 0) ?>">
-                                    <div class="col-md-5">
+                                    <div class="col-md-4">
                                         <label class="form-label small text-secondary mb-1">Name</label>
                                         <input type="text" name="name" class="form-control" required value="<?= esc($selectedUser['name'] ?? '') ?>">
                                     </div>
-                                    <div class="col-md-5">
+                                    <div class="col-md-4">
                                         <label class="form-label small text-secondary mb-1">Email</label>
                                         <input type="email" name="email" class="form-control" required value="<?= esc($selectedUser['email'] ?? '') ?>">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small text-secondary mb-1">Role</label>
+                                        <select name="target_role" class="form-select" required>
+                                            <option value="customer" <?= ($selectedUser['type'] ?? '') === 'customer' ? 'selected' : '' ?>>Customer</option>
+                                            <option value="seller" <?= ($selectedUser['type'] ?? '') === 'seller' ? 'selected' : '' ?>>Seller</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label small text-secondary mb-1">New Password</label>
+                                        <input type="password" name="new_password" class="form-control" minlength="8" placeholder="Optional">
                                     </div>
                                     <div class="col-md-2">
                                         <button type="submit" class="btn btn-outline-dark btn-slim w-100"><i class="bi bi-save"></i> Save</button>
@@ -389,6 +436,7 @@ function pageUrl(array $overrides = []): string
                     <div class="header d-flex justify-content-between align-items-start">
                         <div><h1 class="page-title">Manage Users</h1><div class="subtitle">All registered sellers and customers</div></div>
                         <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-outline-dark btn-slim" data-bs-toggle="modal" data-bs-target="#addAdminModal"><i class="bi bi-person-plus"></i> Add Admin</button>
                             <form method="get" class="d-flex gap-2"><input type="hidden" name="tab" value="users"><select name="role" class="form-select"><option value="">Filter by Role</option><option value="Customer" <?= $roleFilter === 'Customer' ? 'selected' : '' ?>>Customer</option><option value="Seller" <?= $roleFilter === 'Seller' ? 'selected' : '' ?>>Seller</option></select><button class="btn btn-outline-dark btn-slim">Apply</button></form>
 
                         </div>
@@ -670,7 +718,13 @@ function pageUrl(array $overrides = []): string
                         <form method="get" class="d-flex gap-2">
                             <input type="hidden" name="tab" value="orders">
                             <input type="text" class="form-control" name="search" placeholder="Search order/customer" value="<?= esc($search) ?>">
-                            <select name="status" class="form-select"><option value="">Filter by Status</option><option value="Delivered">Delivered</option><option value="Processing">Processing</option><option value="Pending">Pending</option><option value="Cancelled">Cancelled</option></select>
+                            <select name="status" class="form-select">
+                                <option value="">All Order Statuses</option>
+                                <option value="Pending" <?= $orderStatusFilter === 'Pending' ? 'selected' : '' ?>>Pending</option>
+                                <option value="Processing" <?= $orderStatusFilter === 'Processing' ? 'selected' : '' ?>>Processing</option>
+                                <option value="Delivered" <?= $orderStatusFilter === 'Delivered' ? 'selected' : '' ?>>Delivered</option>
+                                <option value="Cancelled" <?= $orderStatusFilter === 'Cancelled' ? 'selected' : '' ?>>Cancelled</option>
+                            </select>
                             <button class="btn btn-outline-dark btn-slim">Apply</button>
                         </form>
                     </div>
@@ -718,10 +772,44 @@ function pageUrl(array $overrides = []): string
                 <?php
                 $pageTitle = 'Reports';
                 $pageSubtitle = 'Revenue and performance overview';
-                $headerRightHtml = '<a href="actions/export_reports.php" class="btn btn-outline-dark btn-slim"><i class="bi bi-download"></i> Export CSV</a>';
+                $reportQuery = http_build_query(array_filter([
+                    'tab' => 'reports',
+                    'date_from' => $reportDateFrom,
+                    'date_to' => $reportDateTo,
+                ]));
+                $exportUrl = 'actions/export_reports.php' . ($reportQuery ? '?' . preg_replace('/^tab=reports&?/', '', $reportQuery) : '');
+                if ($reportDateFrom !== '' || $reportDateTo !== '') {
+                    $exportUrl = 'actions/export_reports.php?' . http_build_query(array_filter(['date_from' => $reportDateFrom, 'date_to' => $reportDateTo]));
+                }
+                $printUrl = 'actions/print_reports.php?' . http_build_query(array_filter(['date_from' => $reportDateFrom, 'date_to' => $reportDateTo]));
+                $headerRightHtml = '';
                 include __DIR__ . '/views/header.php';
                 ?>
-                <div class="inner">
+                <div class="inner pb-0">
+                    <form method="get" class="d-flex flex-wrap align-items-end gap-2 mb-3">
+                        <input type="hidden" name="tab" value="reports">
+                        <div>
+                            <label class="form-label small text-secondary mb-1">From</label>
+                            <input type="date" name="date_from" class="form-control" value="<?= esc($reportDateFrom) ?>">
+                        </div>
+                        <div>
+                            <label class="form-label small text-secondary mb-1">To</label>
+                            <input type="date" name="date_to" class="form-control" value="<?= esc($reportDateTo) ?>">
+                        </div>
+                        <button type="submit" class="btn btn-outline-dark btn-slim">Apply</button>
+                        <a href="dashboard.php?tab=reports" class="btn btn-light btn-slim border">Clear</a>
+                        <a href="<?= esc($exportUrl) ?>" class="btn btn-outline-dark btn-slim"><i class="bi bi-download"></i> Export CSV</a>
+                        <a href="<?= esc($printUrl) ?>" target="_blank" class="btn btn-dark btn-slim"><i class="bi bi-printer"></i> Print Report</a>
+                    </form>
+                    <?php if ($reportDateFrom !== '' || $reportDateTo !== ''): ?>
+                        <p class="text-secondary small mb-3">
+                            Showing transactions
+                            <?php if ($reportDateFrom !== ''): ?>from <strong><?= esc($reportDateFrom) ?></strong><?php endif; ?>
+                            <?php if ($reportDateTo !== ''): ?> to <strong><?= esc($reportDateTo) ?></strong><?php endif; ?>
+                        </p>
+                    <?php endif; ?>
+                </div>
+                <div class="inner pt-0">
                     <div class="row g-3 mb-3">
                         <div class="col-md-3"><div class="stat-box"><div class="label">Total Revenue</div><div class="value">₱<?= number_format($totalRevenue, 0) ?></div></div></div>
                         <div class="col-md-3"><div class="stat-box"><div class="label">Total Transactions</div><div class="value"><?= count($reportRows) ?></div></div></div>
@@ -764,6 +852,42 @@ function pageUrl(array $overrides = []): string
 
         </section>
     </main>
+</div>
+
+<!-- ===== Add Admin Modal ===== -->
+<div class="modal fade" id="addAdminModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0" style="border-radius: 12px;">
+            <div class="modal-header border-0 pb-0">
+                <div>
+                    <h5 class="modal-title fw-bold">Add Admin</h5>
+                    <div class="text-muted small">Create another admin account for system access.</div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="actions/add_admin.php">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small fw-medium text-secondary mb-1">Full Name</label>
+                        <input type="text" name="username" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-medium text-secondary mb-1">Email</label>
+                        <input type="email" name="email" class="form-control" required>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label small fw-medium text-secondary mb-1">Initial Password</label>
+                        <input type="password" name="password" class="form-control" required minlength="8">
+                        <div class="form-text" style="font-size: 11px;">Minimum 8 characters.</div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0">
+                    <button type="button" class="btn btn-light btn-slim" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-dark btn-slim">Create Admin</button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 
 <!-- ===== About Developer Modal ===== -->

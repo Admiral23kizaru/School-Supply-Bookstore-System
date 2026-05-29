@@ -1,11 +1,15 @@
 <?php
 session_start();
 require_once '../../config/db.php';
+require_once '../includes/helpers.php';
 
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
     header('Location: ../../index.php?action=login');
     exit;
 }
+
+$dateFrom = trim($_GET['date_from'] ?? '');
+$dateTo = trim($_GET['date_to'] ?? '');
 
 $reportRows = [];
 $reportSql = "
@@ -14,8 +18,16 @@ FROM order_items oi
 INNER JOIN orders o ON o.id = oi.order_id
 INNER JOIN products p ON p.id = oi.product_id
 LEFT JOIN sellers s ON s.id = p.seller_id
-ORDER BY o.created_at ASC
+WHERE 1=1
 ";
+if ($dateFrom !== '' && isValidReportDate($dateFrom)) {
+    $reportSql .= " AND DATE(o.created_at) >= '" . $conn->real_escape_string($dateFrom) . "'";
+}
+if ($dateTo !== '' && isValidReportDate($dateTo)) {
+    $reportSql .= " AND DATE(o.created_at) <= '" . $conn->real_escape_string($dateTo) . "'";
+}
+$reportSql .= " ORDER BY o.created_at ASC";
+
 $rep = $conn->query($reportSql);
 while ($rep && ($r = $rep->fetch_assoc())) {
     $reportRows[] = [

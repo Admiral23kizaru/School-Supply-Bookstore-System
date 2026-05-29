@@ -27,12 +27,21 @@
   <?php endif; ?>
 
   <?php if (isset($_GET['success']) && $_GET['success'] == 'registered_verify'): ?>
-  <div class="alert alert-info d-flex align-items-center py-3 rounded-xl mb-4" role="alert" style="background-color: #e0f2fe; border-color: #bae6fd; color: #0369a1;">
-    <i class="bi bi-envelope-check-fill me-2 fs-5"></i>
-    <div>
-      <strong class="d-block" style="line-height:1; font-size:14px;">Verify your email</strong>
-      <span style="font-size:13px;">We've sent a verification link to your email. Please click it to verify.</span>
+  <div class="alert alert-info d-flex align-items-center justify-content-between py-3 rounded-xl mb-4" role="alert" style="background-color: #e0f2fe; border-color: #bae6fd; color: #0369a1;">
+    <div class="d-flex align-items-center">
+      <i class="bi bi-envelope-check-fill me-2 fs-5"></i>
+      <div>
+        <strong class="d-block" style="line-height:1; font-size:14px;">Verify your email</strong>
+        <span style="font-size:13px;">We've sent a verification link to your email. Please click it to verify.</span>
+      </div>
     </div>
+    <?php if (isset($_GET['email']) && isset($_GET['role'])): ?>
+    <form method="POST" action="auth/resend_verification.php" class="m-0">
+      <input type="hidden" name="email" value="<?= htmlspecialchars($_GET['email']) ?>">
+      <input type="hidden" name="role" value="<?= htmlspecialchars($_GET['role']) ?>">
+      <button type="submit" class="btn btn-sm btn-outline-dark fw-bold ms-2" style="font-size: 11px;">Resend</button>
+    </form>
+    <?php endif; ?>
   </div>
   <?php endif; ?>
 
@@ -107,11 +116,30 @@
   <?php endif; ?>
 
   <?php if (isset($_GET['error']) && $_GET['error'] == 'unverified'): ?>
-  <div class="alert alert-warning d-flex align-items-center py-3 rounded-xl mb-4" role="alert" style="background-color: #fffbeb; border-color: #fcd34d; color: #92400e;">
-    <i class="bi bi-envelope-exclamation-fill me-2 fs-5"></i>
+  <div class="alert alert-warning d-flex align-items-center justify-content-between py-3 rounded-xl mb-4" role="alert" style="background-color: #fffbeb; border-color: #fcd34d; color: #92400e;">
+    <div class="d-flex align-items-center">
+      <i class="bi bi-envelope-exclamation-fill me-2 fs-5"></i>
+      <div>
+        <strong class="d-block" style="line-height:1; font-size:14px;">Email not verified</strong>
+        <span style="font-size:13px;">Please verify your email first before signing in.</span>
+      </div>
+    </div>
+    <?php if (isset($_GET['email']) && isset($_GET['role'])): ?>
+    <form method="POST" action="auth/resend_verification.php" class="m-0">
+      <input type="hidden" name="email" value="<?= htmlspecialchars($_GET['email']) ?>">
+      <input type="hidden" name="role" value="<?= htmlspecialchars($_GET['role']) ?>">
+      <button type="submit" class="btn btn-sm btn-outline-dark fw-bold ms-2" style="font-size: 11px;">Resend</button>
+    </form>
+    <?php endif; ?>
+  </div>
+  <?php endif; ?>
+
+  <?php if (isset($_GET['success']) && $_GET['success'] == 'verification_resent'): ?>
+  <div class="alert alert-success d-flex align-items-center py-3 rounded-xl mb-4" role="alert" style="background-color: #f0fdf4; border-color: #bbf7d0; color: #166534;">
+    <i class="bi bi-envelope-check-fill me-2 fs-5"></i>
     <div>
-      <strong class="d-block" style="line-height:1; font-size:14px;">Email not verified</strong>
-      <span style="font-size:13px;">Please verify your email first before signing in.</span>
+      <strong class="d-block" style="line-height:1; font-size:14px;">Verification email sent</strong>
+      <span style="font-size:13px;">We've sent a new verification link to your email.</span>
     </div>
   </div>
   <?php endif; ?>

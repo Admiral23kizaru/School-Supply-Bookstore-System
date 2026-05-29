@@ -300,10 +300,38 @@ function pageUrl(array $overrides = []): string
                         <h1 class="page-title">Sales Report</h1>
                         <div class="subtitle">Transaction history overview</div>
                     </div>
-                    <a class="btn btn-outline-dark toolbar-btn" href="actions/export_sales.php">
+                </div>
+                <form method="get" class="d-flex flex-wrap align-items-end gap-2 mb-3">
+                    <input type="hidden" name="tab" value="sales">
+                    <div>
+                        <label class="form-label small text-secondary mb-1">From</label>
+                        <input type="date" name="date_from" class="form-control" value="<?= esc($salesDateFrom) ?>">
+                    </div>
+                    <div>
+                        <label class="form-label small text-secondary mb-1">To</label>
+                        <input type="date" name="date_to" class="form-control" value="<?= esc($salesDateTo) ?>">
+                    </div>
+                    <button type="submit" class="btn btn-outline-dark">Apply</button>
+                    <a href="dashboard.php?tab=sales" class="btn btn-light border">Clear</a>
+                    <?php
+                    $salesExportQuery = http_build_query(array_filter(['date_from' => $salesDateFrom, 'date_to' => $salesDateTo]));
+                    $salesExportUrl = 'actions/export_sales.php' . ($salesExportQuery ? '?' . $salesExportQuery : '');
+                    $salesPrintUrl = 'actions/print_sales.php' . ($salesExportQuery ? '?' . $salesExportQuery : '');
+                    ?>
+                    <a class="btn btn-outline-dark toolbar-btn" href="<?= esc($salesExportUrl) ?>">
                         <i class="bi bi-download"></i> Export CSV
                     </a>
-                </div>
+                    <a class="btn btn-dark toolbar-btn" href="<?= esc($salesPrintUrl) ?>" target="_blank">
+                        <i class="bi bi-printer"></i> Print Report
+                    </a>
+                </form>
+                <?php if ($salesDateFrom !== '' || $salesDateTo !== ''): ?>
+                    <p class="text-secondary small mb-3">
+                        Showing sales
+                        <?php if ($salesDateFrom !== ''): ?>from <strong><?= esc($salesDateFrom) ?></strong><?php endif; ?>
+                        <?php if ($salesDateTo !== ''): ?> to <strong><?= esc($salesDateTo) ?></strong><?php endif; ?>
+                    </p>
+                <?php endif; ?>
 
                 <div class="row g-3 mb-3">
                     <div class="col-md-4">
@@ -492,6 +520,12 @@ function pageUrl(array $overrides = []): string
                             </a>
                         <?php endif; ?>
                         <?php if ($selectedOrder['status'] === 'Pending' || $selectedOrder['status'] === 'Processing'): ?>
+                            <form method="post" action="actions/cancel_order.php" onsubmit="return confirm('Cancel this customer order?');">
+                                <input type="hidden" name="order_id" value="<?= esc($selectedOrder['id']) ?>">
+                                <button class="btn btn-outline-danger toolbar-btn">
+                                    <i class="bi bi-x-circle"></i> Cancel Order
+                                </button>
+                            </form>
                             <form method="post" action="actions/fulfill_order.php">
                                 <input type="hidden" name="order_id" value="<?= esc($selectedOrder['id']) ?>">
                                 <button class="btn btn-dark toolbar-btn">
@@ -513,7 +547,7 @@ function pageUrl(array $overrides = []): string
                                 <input type="text" class="form-control ps-4" name="search" placeholder="Search order/customer" value="<?= esc($search) ?>">
                             </div>
                             <select class="form-select" name="status">
-                                <option value="">Filter by Status</option>
+                                <option value="">All Order Statuses</option>
                                 <option value="Pending" <?= $statusFilter === 'Pending' ? 'selected' : '' ?>>Pending</option>
                                 <option value="Processing" <?= $statusFilter === 'Processing' ? 'selected' : '' ?>>Processing</option>
                                 <option value="Delivered" <?= $statusFilter === 'Delivered' ? 'selected' : '' ?>>Delivered</option>
@@ -790,13 +824,30 @@ function pageUrl(array $overrides = []): string
                         <div class="text-muted small mt-1">Optional</div>
                     </div>
                     <?php if (!empty($sellerProfileImageUrl)): ?>
-                        <div class="mb-0 text-center">
+                        <div class="mb-3 text-center">
                             <div class="text-muted small fw-semibold mb-2">Current image</div>
                             <div style="width:160px;height:160px;margin:0 auto;border-radius:12px;overflow:hidden;border:1px solid #e7e8ec;">
                                 <img src="<?= esc($sellerProfileImageUrl) ?>" alt="Profile" style="width:100%;height:100%;object-fit:cover;">
                             </div>
                         </div>
                     <?php endif; ?>
+                    <hr>
+                    <div class="mb-3">
+                        <div class="fw-bold mb-1">Change Password</div>
+                        <div class="text-muted small mb-2">Leave blank if you don't want to change your password.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-secondary small">Current password</label>
+                        <input type="password" name="current_password" class="form-control" autocomplete="current-password">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold text-secondary small">New password</label>
+                        <input type="password" name="new_password" class="form-control" autocomplete="new-password">
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label fw-semibold text-secondary small">Confirm new password</label>
+                        <input type="password" name="confirm_new_password" class="form-control" autocomplete="new-password">
+                    </div>
                 </div>
                 <div class="modal-footer border-0 pt-0">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>

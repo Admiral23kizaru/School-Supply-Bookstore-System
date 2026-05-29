@@ -28,12 +28,15 @@ function sendVerificationMail(string $toEmail, string $token): bool
         $mail->isHTML(true);
         $mail->Subject = 'Verify Your Email Address';
         
-        // Use current domain
+        // Use current domain and resolve the app root even when called from /auth.
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https://" : "http://";
         $host = $_SERVER['HTTP_HOST'];
-        // Try to guess the subfolder based on the current executing script
-        $dir = dirname($_SERVER['SCRIPT_NAME']); 
-        $verifyLink = $protocol . $host . $dir . "/index.php?action=verify_email&token=" . urlencode($token);
+        $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? ''));
+        if (basename($scriptDir) === 'auth') {
+            $scriptDir = dirname($scriptDir);
+        }
+        $scriptDir = rtrim($scriptDir, '/');
+        $verifyLink = $protocol . $host . $scriptDir . "/index.php?action=verify_email&token=" . urlencode($token);
 
         $mail->Body = '
         <div style="font-family: sans-serif; background: #f8f9fa; padding: 20px;">

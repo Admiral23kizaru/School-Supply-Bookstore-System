@@ -29,8 +29,18 @@
 
     <!-- Table -->
     <div class="card-custom bg-white d-flex flex-column mb-4 border-0 shadow-sm" style="min-height: 400px; flex-grow: 1;">
-        <div class="px-4 py-3 border-bottom d-flex align-items-center justify-content-between">
+        <div class="px-4 py-3 border-bottom d-flex align-items-center justify-content-between flex-wrap gap-2">
             <h3 class="fw-bold text-dark mb-0" style="font-size: 14px;">Recent Orders</h3>
+            <div class="d-flex align-items-center gap-2">
+                <label class="text-secondary small fw-semibold mb-0">Status:</label>
+                <select x-model="orderStatusFilter" @change="orderPage = 1" class="form-select form-select-sm" style="width: auto; min-width: 140px;">
+                    <option value="">All Statuses</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Processing">Processing</option>
+                    <option value="Delivered">Delivered</option>
+                    <option value="Cancelled">Cancelled</option>
+                </select>
+            </div>
         </div>
         
         <div class="table-responsive flex-grow-1">
@@ -42,6 +52,7 @@
                         <th class="text-gray-400 fw-bold text-uppercase px-4 py-3" style="font-size: 10px; letter-spacing: 0.5px;">Items</th>
                         <th class="text-gray-400 fw-bold text-uppercase px-4 py-3 text-end" style="font-size: 10px; letter-spacing: 0.5px;">Total</th>
                         <th class="text-gray-400 fw-bold text-uppercase px-4 py-3 text-end" style="font-size: 10px; letter-spacing: 0.5px;">Status</th>
+                        <th class="text-gray-400 fw-bold text-uppercase px-4 py-3 text-end" style="font-size: 10px; letter-spacing: 0.5px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -69,10 +80,20 @@
                                       }"
                                       style="font-size: 11px;" x-text="order.status"></span>
                             </td>
+                            <td class="px-4 py-3 text-end">
+                                <div class="d-inline-flex align-items-center justify-content-end gap-1">
+                                    <a class="btn btn-sm btn-outline-secondary" style="font-size: 11px;" :href="'generate_receipt.php?id=' + encodeURIComponent(order.id)" target="_blank">
+                                        <i class="bi bi-receipt"></i> Receipt
+                                    </a>
+                                    <button type="button" class="btn btn-sm btn-outline-danger" style="font-size: 11px;" x-show="order.status === 'Pending' || order.status === 'Processing'" @click="cancelOrder(order)">
+                                        <i class="bi bi-x-circle"></i> Cancel
+                                    </button>
+                                </div>
+                            </td>
                         </tr>
                     </template>
-                    <tr :class="orders.length === 0 ? '' : 'd-none'">
-                        <td colspan="5" class="text-center py-5">
+                    <tr :class="filteredOrders.length === 0 ? '' : 'd-none'">
+                        <td colspan="6" class="text-center py-5">
                             <div class="rounded-circle bg-light d-inline-flex align-items-center justify-content-center mb-3" style="width: 48px; height: 48px;">
                                 <i class="bi bi-receipt text-secondary fs-4"></i>
                             </div>
@@ -86,7 +107,7 @@
         <!-- Pagination Footer -->
         <div class="px-4 py-3 border-top d-flex align-items-center justify-content-between mt-auto">
             <span class="text-secondary fw-medium" style="font-size: 13px;">
-                Showing <span x-text="orderRangeStart"></span>-<span x-text="orderRangeEnd"></span> of <span x-text="orders.length"></span> order(s)
+                Showing <span x-text="orderRangeStart"></span>-<span x-text="orderRangeEnd"></span> of <span x-text="filteredOrders.length"></span> order(s)
             </span>
             <div class="d-flex align-items-center gap-1">
                 <button class="btn btn-sm btn-link text-secondary text-decoration-none d-flex align-items-center gap-1 shadow-none" @click="prevOrderPage" :disabled="orderPage === 1"><i class="bi bi-chevron-left"></i> Prev</button>

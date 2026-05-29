@@ -7,7 +7,14 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'seller') {
     exit;
 }
 
+function isValidReportDate(string $date): bool
+{
+    return preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1;
+}
+
 $sellerId = (int) ($_SESSION['user_id'] ?? 0);
+$dateFrom = trim($_GET['date_from'] ?? '');
+$dateTo = trim($_GET['date_to'] ?? '');
 
 $salesSql = "
 SELECT
@@ -23,8 +30,15 @@ FROM orders o
 INNER JOIN order_items oi ON oi.order_id = o.id
 INNER JOIN products p ON p.id = oi.product_id
 WHERE (p.seller_id = ? OR p.seller_id IS NULL)
-ORDER BY o.created_at ASC, oi.id ASC
 ";
+if ($dateFrom !== '' && isValidReportDate($dateFrom)) {
+    $salesSql .= " AND DATE(o.created_at) >= '" . $conn->real_escape_string($dateFrom) . "'";
+}
+if ($dateTo !== '' && isValidReportDate($dateTo)) {
+    $salesSql .= " AND DATE(o.created_at) <= '" . $conn->real_escape_string($dateTo) . "'";
+}
+$salesSql .= " ORDER BY o.created_at ASC, oi.id ASC";
+
 $salesStmt = $conn->prepare($salesSql);
 $salesRows = [];
 if ($salesStmt) {

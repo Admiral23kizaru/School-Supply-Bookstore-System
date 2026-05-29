@@ -1,9 +1,9 @@
 <?php
 session_start();
 require_once '../../config/db.php';
-require_once '../includes/helpers.php';
+require_once '../../admin/includes/helpers.php';
 
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin' || empty($_SESSION['is_super_admin'])) {
     header('Location: ../../index.php?action=login');
     exit;
 }

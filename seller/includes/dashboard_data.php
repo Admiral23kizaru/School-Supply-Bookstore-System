@@ -31,7 +31,25 @@ function paginateRows(array $rows, int $page, int $perPage = 10): array
 
 $search = trim($_GET['search'] ?? '');
 $statusFilter = trim($_GET['status'] ?? '');
+$salesDateFrom = trim($_GET['date_from'] ?? '');
+$salesDateTo = trim($_GET['date_to'] ?? '');
 $viewOrderId = trim($_GET['view'] ?? '');
+
+function isValidReportDate(string $date): bool
+{
+    return preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1;
+}
+
+function sortOrdersByStatus(array $orders): array
+{
+    $priority = ['Pending' => 1, 'Processing' => 2, 'Delivered' => 3, 'Fulfilled' => 4, 'Cancelled' => 5];
+    usort($orders, function ($a, $b) use ($priority) {
+        $pa = $priority[$a['status'] ?? ''] ?? 99;
+        $pb = $priority[$b['status'] ?? ''] ?? 99;
+        return $pa <=> $pb;
+    });
+    return $orders;
+}
 
 $sellerName = 'Seller Account';
 $sellerProfileImageUrl = '';
@@ -92,8 +110,14 @@ FROM orders o
 INNER JOIN order_items oi ON oi.order_id = o.id
 INNER JOIN products p ON p.id = oi.product_id
 WHERE (p.seller_id = ? OR p.seller_id IS NULL)
-ORDER BY o.created_at ASC, oi.id ASC
 ";
+if ($salesDateFrom !== '' && isValidReportDate($salesDateFrom)) {
+    $salesSql .= " AND DATE(o.created_at) >= '" . $conn->real_escape_string($salesDateFrom) . "'";
+}
+if ($salesDateTo !== '' && isValidReportDate($salesDateTo)) {
+    $salesSql .= " AND DATE(o.created_at) <= '" . $conn->real_escape_string($salesDateTo) . "'";
+}
+$salesSql .= " ORDER BY o.created_at ASC, oi.id ASC";
 $salesStmt = $conn->prepare($salesSql);
 $salesRows = [];
 if ($salesStmt) {
@@ -145,7 +169,7 @@ if ($search !== '') {
     $params[] = $like;
 }
 
-$ordersSql .= " ORDER BY o.created_at ASC ";
+$ordersSql .= " ORDER BY FIELD(o.status, 'Pending', 'Processing', 'Delivered', 'Fulfilled', 'Cancelled'), o.created_at DESC ";
 $ordersStmt = $conn->prepare($ordersSql);
 $ordersRows = [];
 if ($ordersStmt) {

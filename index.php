@@ -164,6 +164,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
                 exit;
             }
 
+            // Check if the user is verified (only applies to customers and sellers)
+            if ($user['table'] === 'customers' || $user['table'] === 'sellers') {
+                $table = $user['table'];
+                $id = $user['id'];
+                $checkVerified = $conn->prepare("SELECT is_verified FROM `$table` WHERE id = ?");
+                if ($checkVerified) {
+                    $checkVerified->bind_param("i", $id);
+                    $checkVerified->execute();
+                    $vRow = $checkVerified->get_result()->fetch_assoc();
+                    if ($vRow && isset($vRow['is_verified']) && (int)$vRow['is_verified'] !== 1) {
+                        header('Location: index.php?action=forgot&error=unverified');
+                        exit;
+                    }
+                }
+            }
+
             $otp = (string) random_int(100000, 999999);
             $_SESSION['pw_reset'] = [
                 'email' => $email,
@@ -259,6 +275,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
             exit;
         }
 
+        $confirmPassword = $_POST['confirm_password'] ?? '';
+        if ($password !== $confirmPassword) {
+            header('Location: index.php?action=register&error=password_mismatch');
+            exit;
+        }
+
         $hashed_password = password_hash($password, PASSWORD_DEFAULT);
         
         $table = 'customers';
@@ -291,7 +313,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
             error_log("Registration SUCCESS for $email in $table");
             if ($table === 'customers' || $table === 'sellers') {
                 sendVerificationMail($email, $token);
-                header('Location: index.php?action=login&success=registered_verify');
+                header('Location: index.php?action=login&success=registered_verify&email=' . urlencode($email) . '&role=' . urlencode(strtolower($role)));
             } else {
                 header('Location: index.php?action=login&success=1');
             }
@@ -341,7 +363,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
     if ($user = $res->fetch_assoc()) {
         if (password_verify($password, $user['password'])) {
             if (isset($user['is_verified']) && (int) $user['is_verified'] !== 1) {
-                header('Location: index.php?action=login&error=unverified');
+                header('Location: index.php?action=login&error=unverified&email=' . urlencode($email) . '&role=seller');
                 exit;
             }
             $approvalStatus = resolveApprovalStatus($conn, 'sellers', (int) $user['id']);
@@ -380,7 +402,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['email'])) {
     if ($user = $res->fetch_assoc()) {
         if (password_verify($password, $user['password'])) {
             if (isset($user['is_verified']) && (int) $user['is_verified'] !== 1) {
-                header('Location: index.php?action=login&error=unverified');
+                header('Location: index.php?action=login&error=unverified&email=' . urlencode($email) . '&role=customer');
                 exit;
             }
             $approvalStatus = resolveApprovalStatus($conn, 'customers', (int) $user['id']);

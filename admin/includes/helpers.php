@@ -5,6 +5,22 @@ function esc(string $value): string
     return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
 }
 
+function isValidReportDate(string $date): bool
+{
+    return preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1;
+}
+
+function sortOrdersByStatus(array $orders): array
+{
+    $priority = ['Pending' => 1, 'Processing' => 2, 'Delivered' => 3, 'Fulfilled' => 4, 'Cancelled' => 5];
+    usort($orders, function ($a, $b) use ($priority) {
+        $pa = $priority[$a['status'] ?? ''] ?? 99;
+        $pb = $priority[$b['status'] ?? ''] ?? 99;
+        return $pa <=> $pb;
+    });
+    return $orders;
+}
+
 function product_status(int $stock): string
 {
     if ($stock <= 0) {

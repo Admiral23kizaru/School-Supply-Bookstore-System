@@ -236,7 +236,7 @@ require_once __DIR__ . '/includes/dashboard_data.php';
                                                 <th>Customer Name</th>
                                                 <th>Date</th>
                                                 <th>Amount</th>
-                                                <th>Status Order</th>
+                                                <th>Order Status</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -259,6 +259,91 @@ require_once __DIR__ . '/includes/dashboard_data.php';
                             </div>
                         </div>
                     </div>
+                </div>
+            <?php elseif ($tab === 'profile'): ?>
+                <div class="header d-flex justify-content-between align-items-start">
+                    <div>
+                        <h1 class="page-title">Profile</h1>
+                        <div class="subtitle">Update your name, email, profile picture, and password</div>
+                    </div>
+                </div>
+                <div class="inner">
+                    <?php if (isset($_GET['saved']) && $_GET['saved'] === '1'): ?>
+                        <div class="alert alert-success py-2 rounded-xl mb-3" style="font-size: 13px;">Profile saved successfully.</div>
+                    <?php endif; ?>
+                    <?php if (isset($_GET['error'])): ?>
+                        <?php
+                        $pe = (string) $_GET['error'];
+                        $pmsg = match ($pe) {
+                            'invalid' => 'Please enter your full name.',
+                            'invalid_email' => 'Please enter a valid email address.',
+                            'email_taken' => 'That email is already in use.',
+                            'save_failed' => 'Could not save changes. Please try again.',
+                            'wrong_password' => 'Current password is incorrect.',
+                            'password_mismatch' => 'New passwords do not match.',
+                            'weak_password' => 'New password must be at least 8 characters.',
+                            default => 'Something went wrong. Please try again.',
+                        };
+                        ?>
+                        <div class="alert alert-danger py-2 rounded-xl mb-3" style="font-size: 13px;"><?= esc($pmsg) ?></div>
+                    <?php endif; ?>
+                    <form method="post" action="actions/update_profile.php" enctype="multipart/form-data" class="row g-4 align-items-start">
+                        <div class="col-md-4 col-lg-3">
+                            <div class="dash-panel h-100 p-3">
+                                <div class="detail-title fw-bold mb-3">Profile photo</div>
+                                <div class="d-flex justify-content-center mb-3">
+                                    <div class="rounded-circle overflow-hidden d-flex align-items-center justify-content-center bg-light border" style="width: 120px; height: 120px;">
+                                        <?php if (!empty($adminProfileImageUrl)): ?>
+                                            <img src="<?= esc($adminProfileImageUrl) ?>" alt="" style="width:100%;height:100%;object-fit:cover;">
+                                        <?php else: ?>
+                                            <i class="bi bi-person text-secondary" style="font-size: 3rem;"></i>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                <label class="form-label text-secondary small fw-medium mb-1">Upload image</label>
+                                <input type="file" name="image" class="form-control" accept="image/jpeg,image/png,image/webp,image/gif">
+                                <div class="text-muted small mt-2" style="font-size: 11px;">JPEG, PNG, WebP, or GIF. Max 2 MB. Leave empty to keep the current photo.</div>
+                            </div>
+                        </div>
+                        <div class="col-md-8 col-lg-9">
+                            <div class="dash-panel p-4">
+                                <div class="detail-title fw-bold mb-3">Account details</div>
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label text-secondary small fw-medium mb-1">Full name</label>
+                                        <input type="text" name="name" class="form-control" value="<?= esc($adminName) ?>" required autocomplete="name">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label text-secondary small fw-medium mb-1">Email</label>
+                                        <input type="email" name="email" class="form-control" value="<?= esc($adminEmail) ?>" required autocomplete="email">
+                                    </div>
+                                </div>
+                                <div class="row g-3 mt-1">
+                                    <div class="col-12"><hr class="text-muted"></div>
+                                    <div class="col-12">
+                                        <div class="detail-title fw-bold mb-2">Change password</div>
+                                        <div class="text-muted small mb-3" style="font-size: 12px;">Leave blank if you don't want to change your password.</div>
+                                    </div>
+                                    <div class="col-md-12">
+                                        <label class="form-label text-secondary small fw-medium mb-1">Current password</label>
+                                        <input type="password" name="current_password" class="form-control" autocomplete="current-password">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label text-secondary small fw-medium mb-1">New password</label>
+                                        <input type="password" name="new_password" class="form-control" autocomplete="new-password">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label text-secondary small fw-medium mb-1">Confirm new password</label>
+                                        <input type="password" name="confirm_new_password" class="form-control" autocomplete="new-password">
+                                    </div>
+                                </div>
+                                <div class="mt-4 d-flex flex-wrap gap-2 justify-content-end">
+                                    <a href="dashboard.php?tab=dashboard" class="btn btn-outline-secondary btn-slim">Cancel</a>
+                                    <button type="submit" class="btn btn-dark btn-slim"><i class="bi bi-save"></i> Save changes</button>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
                 </div>
             <?php elseif ($tab === 'users'): ?>
                 <div class="header d-flex justify-content-between align-items-start">
